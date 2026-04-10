@@ -226,38 +226,38 @@
     }
   }
 
+  // 查找提交按钮（开始试用）
+  function findSubmitButton() {
+    // 尝试多种选择器
+    const selectors = [
+      'button[type="submit"]',
+      '.SubmitButton',
+      '[data-testid="hosted-payment-submit-button"]',
+      'button.SubmitButton-IconContainer',
+      '.SubmitButton-IconContainer'
+    ];
+    
+    for (const selector of selectors) {
+      const btn = document.querySelector(selector);
+      if (btn) return btn;
+    }
+    
+    // 通过按钮文本查找
+    const buttons = document.querySelectorAll('button');
+    for (const btn of buttons) {
+      if (btn.textContent.includes('开始试用') || 
+          btn.textContent.includes('Start trial') ||
+          btn.textContent.includes('Subscribe')) {
+        return btn;
+      }
+    }
+    return null;
+  }
+
   // 自动点击"开始试用"按钮
-  // 监测金额稳定后自动提交
+  // 监测金额稳定后自动提交，并带重试机制
   async function autoClickSubmit() {
     console.log('[Windsurf] 开始监测金额变化...');
-    
-    // 查找提交按钮（开始试用）
-    const findSubmitButton = () => {
-      // 尝试多种选择器
-      const selectors = [
-        'button[type="submit"]',
-        '.SubmitButton',
-        '[data-testid="hosted-payment-submit-button"]',
-        'button.SubmitButton-IconContainer',
-        '.SubmitButton-IconContainer'
-      ];
-      
-      for (const selector of selectors) {
-        const btn = document.querySelector(selector);
-        if (btn) return btn;
-      }
-      
-      // 通过按钮文本查找
-      const buttons = document.querySelectorAll('button');
-      for (const btn of buttons) {
-        if (btn.textContent.includes('开始试用') || 
-            btn.textContent.includes('Start trial') ||
-            btn.textContent.includes('Subscribe')) {
-          return btn;
-        }
-      }
-      return null;
-    };
 
     // 获取当前金额文本
     const getAmountText = () => {
@@ -307,19 +307,89 @@
       submitBtn.click();
       console.log('[Windsurf] 已点击"开始试用"按钮');
       showStatus('✓ 已自动提交！', 'success');
+
+      // 提交后重试检测：如果按钮仍可点击，说明提交未生效，自动重试
+      await verifyAndRetrySubmit();
     } else {
       console.log('[Windsurf] 未找到提交按钮');
       showStatus('填卡完成，请手动点击提交', 'info');
     }
   }
 
+  // 提交后验证并重试
+  async function verifyAndRetrySubmit() {
+    const maxRetries = 5;
+    
+    for (let retry = 1; retry <= maxRetries; retry++) {
+      // 每次等待3秒后检查
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      const btn = findSubmitButton();
+      
+      // 按钮已消失，说明页面已跳转/提交成功
+      if (!btn) {
+        console.log('[Windsurf] 提交按钮已消失，提交成功');
+        return;
+      }
+      
+      // 按钮处于 loading/processing 状态，说明正在提交
+      if (btn.disabled || 
+          btn.classList.contains('SubmitButton--processing') ||
+          btn.getAttribute('aria-busy') === 'true') {
+        console.log('[Windsurf] 提交正在处理中，继续等待...');
+        // 处理中则额外等5秒再检查
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        continue;
+      }
+      
+      // 按钮仍然可点击，说明提交未生效，重试
+      console.log(`[Windsurf] 检测到提交未生效，第 ${retry}/${maxRetries} 次重试点击`);
+      showStatus(`提交未生效，重试第 ${retry} 次...`, 'info');
+      btn.click();
+    }
+    
+    console.log('[Windsurf] 已达到最大重试次数');
+    showStatus('多次重试后仍未成功，请手动提交', 'error');
+  }
+
+  // 等待表单元素加载完成后自动触发填卡
+  function waitForFormAndAutoFill() {
+    const maxAttempts = 60; // 最多等待60秒
+    let attempts = 0;
+    
+    const checkForm = setInterval(() => {
+      attempts++;
+      const cardNumberInput = document.getElementById('cardNumber');
+      
+      if (cardNumberInput) {
+        clearInterval(checkForm);
+        console.log('[Windsurf] 检测到表单元素已加载，自动开始填卡...');
+        showStatus('检测到支付表单，自动填卡中...', 'info');
+        // 延迟500ms确保所有表单元素都已渲染完成
+        setTimeout(() => {
+          handleAutoFill();
+        }, 500);
+      } else if (attempts >= maxAttempts) {
+        clearInterval(checkForm);
+        console.log('[Windsurf] 等待表单元素超时，请手动点击填卡按钮');
+        showStatus('未检测到支付表单，请手动点击', 'info');
+      } else if (attempts % 10 === 0) {
+        console.log(`[Windsurf] 等待表单加载... ${attempts}s`);
+      }
+    }, 1000);
+  }
+
   // 初始化
   function init() {
     // 等待页面加载完成
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', createFloatingWindow);
+      document.addEventListener('DOMContentLoaded', () => {
+        createFloatingWindow();
+        waitForFormAndAutoFill();
+      });
     } else {
       createFloatingWindow();
+      waitForFormAndAutoFill();
     }
   }
 
