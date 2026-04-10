@@ -17,6 +17,9 @@ const clearAllBtn = document.getElementById('clearAllBtn');
 document.addEventListener('DOMContentLoaded', () => {
   loadCards();
   bindEvents();
+  // 显示版本号
+  const manifest = chrome.runtime.getManifest();
+  document.getElementById('versionTag').textContent = `v${manifest.version}`;
 });
 
 // 绑定事件
