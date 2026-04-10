@@ -6,6 +6,11 @@
 (function() {
   'use strict';
 
+  console.log('[Windsurf] ====== content.js 已加载 ======');
+  console.log('[Windsurf] 页面URL:', window.location.href);
+  console.log('[Windsurf] document.readyState:', document.readyState);
+  console.log('[Windsurf] 是否在iframe中:', window !== window.top);
+
   // 固定填写的信息
   const FIXED_INFO = {
     billingName: 'FuckWindsurf',
@@ -124,10 +129,13 @@
 
     try {
       // 从 background 获取随机信用卡
+      console.log('[Windsurf] 正在向background请求信用卡...');
       const response = await chrome.runtime.sendMessage({ action: 'getRandomCard' });
+      console.log('[Windsurf] background响应:', JSON.stringify(response));
 
-      if (!response.success) {
-        showStatus(response.error || '获取信用卡失败', 'error');
+      if (!response || !response.success) {
+        console.error('[Windsurf] 获取信用卡失败:', response);
+        showStatus(response?.error || '获取信用卡失败', 'error');
         return;
       }
 
@@ -154,7 +162,9 @@
         const el = document.getElementById(field.id);
         if (el) {
           field.type === 'select' ? simulateSelect(el, field.value) : simulateInput(el, field.value);
-          console.log(`[Windsurf] 已填写${field.label}`);
+          console.log(`[Windsurf] ✅ 已填写${field.label}: 元素类型=${el.tagName}, 当前值="${el.value}"`);
+        } else {
+          console.warn(`[Windsurf] ⚠️ 未找到元素 #${field.id} (${field.label})`);
         }
         await new Promise(resolve => setTimeout(resolve, field.delay));
       }
@@ -305,41 +315,62 @@
   }
 
   // 等待表单元素加载完成后自动触发填卡
+  // 使用 MutationObserver 替代 setInterval，在后台标签页中不会被 Chrome 节流
   function waitForFormAndAutoFill() {
-    const maxAttempts = 60; // 最多等待60秒
-    let attempts = 0;
-    
-    const checkForm = setInterval(() => {
-      attempts++;
-      const cardNumberInput = document.getElementById('cardNumber');
+    let triggered = false;
+
+    // 先立即检查一次
+    const cardNumberInput = document.getElementById('cardNumber');
+    if (cardNumberInput) {
+      console.log('[Windsurf] ✅ 表单元素已存在，立即开始填卡');
+      triggered = true;
+      setTimeout(() => handleAutoFill(), 500);
+      return;
+    }
+
+    console.log('[Windsurf] 表单元素尚未出现，启动 MutationObserver 监听...');
+
+    // MutationObserver 监听 DOM 变化，检测表单元素出现
+    const observer = new MutationObserver((mutations) => {
+      if (triggered) return;
       
+      const cardNumberInput = document.getElementById('cardNumber');
       if (cardNumberInput) {
-        clearInterval(checkForm);
-        console.log('[Windsurf] 检测到表单元素已加载，自动开始填卡...');
+        triggered = true;
+        observer.disconnect();
+        console.log('[Windsurf] ✅ MutationObserver 检测到表单元素已加载，自动开始填卡...');
         showStatus('检测到支付表单，自动填卡中...', 'info');
-        // 延迟500ms确保所有表单元素都已渲染完成
-        setTimeout(() => {
-          handleAutoFill();
-        }, 500);
-      } else if (attempts >= maxAttempts) {
-        clearInterval(checkForm);
-        console.log('[Windsurf] 等待表单元素超时，请手动点击填卡按钮');
-        showStatus('未检测到支付表单，请手动点击', 'info');
-      } else if (attempts % 10 === 0) {
-        console.log(`[Windsurf] 等待表单加载... ${attempts}s`);
+        setTimeout(() => handleAutoFill(), 500);
       }
-    }, 1000);
+    });
+
+    observer.observe(document.body || document.documentElement, {
+      childList: true,
+      subtree: true
+    });
+
+    // 兜底：120秒超时断开 observer，避免永久监听
+    setTimeout(() => {
+      if (!triggered) {
+        observer.disconnect();
+        console.log('[Windsurf] ❌ MutationObserver 超时（120s），请手动点击填卡按钮');
+        showStatus('未检测到支付表单，请手动点击', 'info');
+      }
+    }, 120000);
   }
 
   // 初始化
   function init() {
+    console.log('[Windsurf] init() 开始执行, readyState:', document.readyState);
     // 等待页面加载完成
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => {
+        console.log('[Windsurf] DOMContentLoaded 触发');
         createFloatingWindow();
         waitForFormAndAutoFill();
       });
     } else {
+      console.log('[Windsurf] 页面已加载完成，直接执行');
       createFloatingWindow();
       waitForFormAndAutoFill();
     }
