@@ -134,77 +134,29 @@
       const card = response.card;
       console.log('[Windsurf] 获取到信用卡:', card.number.slice(-4));
 
+      // 表单字段配置：id, 填写值, 类型(input/select), 日志描述, 填写后延迟ms
+      const fields = [
+        { id: 'cardNumber',                  value: formatCardNumber(card.number),           type: 'input',  label: '卡号',   delay: 50 },
+        { id: 'cardExpiry',                  value: formatExpiry(card.month, card.year),     type: 'input',  label: '过期日期', delay: 50 },
+        { id: 'cardCvc',                     value: card.cvc,                                type: 'input',  label: 'CVC',    delay: 50 },
+        { id: 'billingName',                 value: FIXED_INFO.billingName,                  type: 'input',  label: '姓名',   delay: 50 },
+        { id: 'billingCountry',              value: FIXED_INFO.billingCountry,               type: 'select', label: '国家',   delay: 80 },
+        { id: 'billingAdministrativeArea',   value: FIXED_INFO.billingAdministrativeArea,    type: 'select', label: '城市',   delay: 50 },
+        { id: 'billingLocality',             value: FIXED_INFO.billingLocality,              type: 'input',  label: '地区',   delay: 50 },
+        { id: 'billingAddressLine1',         value: FIXED_INFO.billingAddressLine1,          type: 'input',  label: '地址',   delay: 50 },
+      ];
+
       // 等待页面元素加载
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      // 填写信用卡号
-      const cardNumberInput = document.getElementById('cardNumber');
-      if (cardNumberInput) {
-        simulateInput(cardNumberInput, formatCardNumber(card.number));
-        console.log('[Windsurf] 已填写卡号');
-      }
-
-      await new Promise(resolve => setTimeout(resolve, 50));
-
-      // 填写过期日期
-      const cardExpiryInput = document.getElementById('cardExpiry');
-      if (cardExpiryInput) {
-        simulateInput(cardExpiryInput, formatExpiry(card.month, card.year));
-        console.log('[Windsurf] 已填写过期日期');
-      }
-
-      await new Promise(resolve => setTimeout(resolve, 50));
-
-      // 填写 CVC
-      const cardCvcInput = document.getElementById('cardCvc');
-      if (cardCvcInput) {
-        simulateInput(cardCvcInput, card.cvc);
-        console.log('[Windsurf] 已填写 CVC');
-      }
-
-      await new Promise(resolve => setTimeout(resolve, 50));
-
-      // 填写姓名
-      const billingNameInput = document.getElementById('billingName');
-      if (billingNameInput) {
-        simulateInput(billingNameInput, FIXED_INFO.billingName);
-        console.log('[Windsurf] 已填写姓名');
-      }
-
-      await new Promise(resolve => setTimeout(resolve, 50));
-
-      // 选择国家
-      const billingCountrySelect = document.getElementById('billingCountry');
-      if (billingCountrySelect) {
-        simulateSelect(billingCountrySelect, FIXED_INFO.billingCountry);
-        console.log('[Windsurf] 已选择国家');
-      }
-
-      await new Promise(resolve => setTimeout(resolve, 80));
-
-      // 选择城市/地区
-      const billingAreaSelect = document.getElementById('billingAdministrativeArea');
-      if (billingAreaSelect) {
-        simulateSelect(billingAreaSelect, FIXED_INFO.billingAdministrativeArea);
-        console.log('[Windsurf] 已选择城市');
-      }
-
-      await new Promise(resolve => setTimeout(resolve, 50));
-
-      // 填写地区
-      const billingLocalityInput = document.getElementById('billingLocality');
-      if (billingLocalityInput) {
-        simulateInput(billingLocalityInput, FIXED_INFO.billingLocality);
-        console.log('[Windsurf] 已填写地区');
-      }
-
-      await new Promise(resolve => setTimeout(resolve, 50));
-
-      // 填写地址
-      const billingAddressInput = document.getElementById('billingAddressLine1');
-      if (billingAddressInput) {
-        simulateInput(billingAddressInput, FIXED_INFO.billingAddressLine1);
-        console.log('[Windsurf] 已填写地址');
+      // 逐个填写表单字段
+      for (const field of fields) {
+        const el = document.getElementById(field.id);
+        if (el) {
+          field.type === 'select' ? simulateSelect(el, field.value) : simulateInput(el, field.value);
+          console.log(`[Windsurf] 已填写${field.label}`);
+        }
+        await new Promise(resolve => setTimeout(resolve, field.delay));
       }
 
       showStatus('✓ 填卡完成！等待自动提交...', 'success');
