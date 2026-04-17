@@ -17,8 +17,14 @@
     billingCountry: 'HK',
     billingAdministrativeArea: 'Kowloon',
     billingLocality: '九龍城',
-    billingAddressLine1: '庇利街碧丽花园'
+    billingAddressLine1: '庇利街碧丽花园',
+    billingPostalCode: '999077'
   };
+
+  // 随机生成邮编（用于没有配置邮编时的备选）
+  function randomPostalCode() {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  }
 
   // 创建悬浮窗
   function createFloatingWindow() {
@@ -118,6 +124,73 @@
     return `${mm} / ${yy}`;
   }
 
+  // 勾选复选框（使用 click 以触发 React 状态更新）
+  function simulateCheck(element) {
+    if (!element) return false;
+    if (element.checked) return true;
+    element.click();
+    return element.checked;
+  }
+
+  // 轮询等待某个元素出现（最多等 timeout 毫秒）
+  async function waitForElement(checkFn, timeout = 3000, interval = 100) {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      if (checkFn()) return true;
+      await new Promise(resolve => setTimeout(resolve, interval));
+    }
+    return checkFn();
+  }
+
+  // 展开"银行卡"支付方式（页面新增步骤：默认未展开）
+  async function ensureCardMethodExpanded() {
+    // 如果卡号输入框已经存在，说明已经展开
+    if (document.getElementById('cardNumber')) {
+      console.log('[Windsurf] 银行卡表单已展开');
+      return true;
+    }
+
+    const cardRadio = document.getElementById('payment-method-accordion-item-title-card');
+
+    // 优先点击 accordion 按钮（aria-label="用银行卡支付"）
+    const cardBtn = document.querySelector('[data-testid="card-accordion-item-button"]');
+    if (cardBtn) {
+      cardBtn.click();
+      console.log('[Windsurf] 已点击"银行卡"展开按钮');
+    } else if (cardRadio) {
+      cardRadio.click();
+      console.log('[Windsurf] 已点击银行卡 radio');
+    } else {
+      console.warn('[Windsurf] ⚠️ 未找到银行卡选项');
+      return false;
+    }
+
+    // 等待卡号输入框渲染出来（最多 3 秒）
+    const ok = await waitForElement(() => !!document.getElementById('cardNumber'), 3000);
+    if (ok) {
+      console.log('[Windsurf] ✅ 银行卡表单已渲染');
+    } else {
+      console.warn('[Windsurf] ⚠️ 展开后仍未检测到 #cardNumber');
+    }
+    return ok;
+  }
+
+  // 勾选"同意条款"复选框（页面新增步骤）
+  function ensureTermsAgreed() {
+    const termsCheckbox = document.getElementById('termsOfServiceConsentCheckbox');
+    if (!termsCheckbox) {
+      console.log('[Windsurf] 页面无同意条款选项，跳过');
+      return true;
+    }
+    if (termsCheckbox.checked) {
+      console.log('[Windsurf] 同意条款已勾选');
+      return true;
+    }
+    const ok = simulateCheck(termsCheckbox);
+    console.log(`[Windsurf] ${ok ? '✅ 已勾选' : '⚠️ 勾选失败'}同意条款`);
+    return ok;
+  }
+
   // 执行自动填卡
   async function handleAutoFill() {
     const button = document.getElementById('windsurf-autofill-btn');
@@ -142,16 +215,21 @@
       const card = response.card;
       console.log('[Windsurf] 获取到信用卡:', card.number.slice(-4));
 
+      // 步骤 1（新增）：展开"银行卡"支付方式
+      await ensureCardMethodExpanded();
+
       // 表单字段配置：id, 填写值, 类型(input/select), 日志描述, 填写后延迟ms
+      // required=false 的字段缺失时不告警（兼容不同国家的地址字段差异）
       const fields = [
-        { id: 'cardNumber',                  value: formatCardNumber(card.number),           type: 'input',  label: '卡号',   delay: 50 },
-        { id: 'cardExpiry',                  value: formatExpiry(card.month, card.year),     type: 'input',  label: '过期日期', delay: 50 },
-        { id: 'cardCvc',                     value: card.cvc,                                type: 'input',  label: 'CVC',    delay: 50 },
-        { id: 'billingName',                 value: FIXED_INFO.billingName,                  type: 'input',  label: '姓名',   delay: 50 },
-        { id: 'billingCountry',              value: FIXED_INFO.billingCountry,               type: 'select', label: '国家',   delay: 80 },
-        { id: 'billingAdministrativeArea',   value: FIXED_INFO.billingAdministrativeArea,    type: 'select', label: '城市',   delay: 50 },
-        { id: 'billingLocality',             value: FIXED_INFO.billingLocality,              type: 'input',  label: '地区',   delay: 50 },
-        { id: 'billingAddressLine1',         value: FIXED_INFO.billingAddressLine1,          type: 'input',  label: '地址',   delay: 50 },
+        { id: 'cardNumber',                  value: formatCardNumber(card.number),           type: 'input',  label: '卡号',   delay: 50, required: true  },
+        { id: 'cardExpiry',                  value: formatExpiry(card.month, card.year),     type: 'input',  label: '过期日期', delay: 50, required: true  },
+        { id: 'cardCvc',                     value: card.cvc,                                type: 'input',  label: 'CVC',    delay: 50, required: true  },
+        { id: 'billingName',                 value: FIXED_INFO.billingName,                  type: 'input',  label: '姓名',   delay: 50, required: true  },
+        { id: 'billingCountry',              value: FIXED_INFO.billingCountry,               type: 'select', label: '国家',   delay: 80, required: true  },
+        { id: 'billingAdministrativeArea',   value: FIXED_INFO.billingAdministrativeArea,    type: 'select', label: '州/省',  delay: 50, required: false },
+        { id: 'billingLocality',             value: FIXED_INFO.billingLocality,              type: 'input',  label: '城市',   delay: 50, required: false },
+        { id: 'billingPostalCode',           value: FIXED_INFO.billingPostalCode || randomPostalCode(), type: 'input', label: '邮编', delay: 50, required: false },
+        { id: 'billingAddressLine1',         value: FIXED_INFO.billingAddressLine1,          type: 'input',  label: '地址',   delay: 50, required: false },
       ];
 
       // 等待页面元素加载
@@ -163,11 +241,16 @@
         if (el) {
           field.type === 'select' ? simulateSelect(el, field.value) : simulateInput(el, field.value);
           console.log(`[Windsurf] ✅ 已填写${field.label}: 元素类型=${el.tagName}, 当前值="${el.value}"`);
+        } else if (field.required) {
+          console.warn(`[Windsurf] ⚠️ 未找到必填元素 #${field.id} (${field.label})`);
         } else {
-          console.warn(`[Windsurf] ⚠️ 未找到元素 #${field.id} (${field.label})`);
+          console.log(`[Windsurf] ℹ️ 跳过可选字段 #${field.id} (${field.label})`);
         }
         await new Promise(resolve => setTimeout(resolve, field.delay));
       }
+
+      // 步骤 2（新增）：勾选同意条款
+      ensureTermsAgreed();
 
       showStatus('✓ 填卡完成！等待自动提交...', 'success');
       console.log('[Windsurf] 自动填卡完成，开始监测金额变化');
@@ -314,31 +397,40 @@
     showStatus('多次重试后仍未成功，请手动提交', 'error');
   }
 
+  // 检测是否可以开始自动填卡：
+  // - 卡号表单已渲染（老版本：直接展开），或
+  // - 银行卡折叠按钮已渲染（新版本：需先点击展开）
+  function isPaymentFormReady() {
+    return !!(
+      document.getElementById('cardNumber') ||
+      document.querySelector('[data-testid="card-accordion-item-button"]') ||
+      document.getElementById('payment-method-accordion-item-title-card')
+    );
+  }
+
   // 等待表单元素加载完成后自动触发填卡
   // 使用 MutationObserver 替代 setInterval，在后台标签页中不会被 Chrome 节流
   function waitForFormAndAutoFill() {
     let triggered = false;
 
     // 先立即检查一次
-    const cardNumberInput = document.getElementById('cardNumber');
-    if (cardNumberInput) {
-      console.log('[Windsurf] ✅ 表单元素已存在，立即开始填卡');
+    if (isPaymentFormReady()) {
+      console.log('[Windsurf] ✅ 支付入口已存在，立即开始填卡');
       triggered = true;
       setTimeout(() => handleAutoFill(), 500);
       return;
     }
 
-    console.log('[Windsurf] 表单元素尚未出现，启动 MutationObserver 监听...');
+    console.log('[Windsurf] 支付入口尚未出现，启动 MutationObserver 监听...');
 
     // MutationObserver 监听 DOM 变化，检测表单元素出现
-    const observer = new MutationObserver((mutations) => {
+    const observer = new MutationObserver(() => {
       if (triggered) return;
-      
-      const cardNumberInput = document.getElementById('cardNumber');
-      if (cardNumberInput) {
+
+      if (isPaymentFormReady()) {
         triggered = true;
         observer.disconnect();
-        console.log('[Windsurf] ✅ MutationObserver 检测到表单元素已加载，自动开始填卡...');
+        console.log('[Windsurf] ✅ MutationObserver 检测到支付入口已加载，自动开始填卡...');
         showStatus('检测到支付表单，自动填卡中...', 'info');
         setTimeout(() => handleAutoFill(), 500);
       }
