@@ -11,19 +11,48 @@
   console.log('[Windsurf] document.readyState:', document.readyState);
   console.log('[Windsurf] 是否在iframe中:', window !== window.top);
 
-  // 固定填写的信息
-  const FIXED_INFO = {
-    billingName: 'FuckWindsurf',
-    billingCountry: 'HK',
-    billingAdministrativeArea: 'Kowloon',
-    billingLocality: '九龍城',
-    billingAddressLine1: '庇利街碧丽花园',
-    billingPostalCode: '999077'
-  };
+  // === 随机中国大陆地址生成 ===
+  const CN_PROVINCES = [
+    { name: '北京市', en: 'Beijing', cities: ['北京市'], postalPrefix: '10' },
+    { name: '上海市', en: 'Shanghai', cities: ['上海市'], postalPrefix: '20' },
+    { name: '广东省', en: 'Guangdong', cities: ['广州市', '深圳市', '东莞市', '佛山市', '珠海市'], postalPrefix: '51' },
+    { name: '江苏省', en: 'Jiangsu', cities: ['南京市', '苏州市', '无锡市', '常州市', '南通市'], postalPrefix: '21' },
+    { name: '浙江省', en: 'Zhejiang', cities: ['杭州市', '宁波市', '温州市', '嘉兴市', '绍兴市'], postalPrefix: '31' },
+    { name: '山东省', en: 'Shandong', cities: ['济南市', '青岛市', '烟台市', '潍坊市'], postalPrefix: '25' },
+    { name: '四川省', en: 'Sichuan', cities: ['成都市', '绵阳市', '德阳市', '南充市'], postalPrefix: '61' },
+    { name: '湖北省', en: 'Hubei', cities: ['武汉市', '宜昌市', '襄阳市', '荆州市'], postalPrefix: '43' },
+    { name: '福建省', en: 'Fujian', cities: ['福州市', '厦门市', '泉州市', '漳州市'], postalPrefix: '35' },
+    { name: '湖南省', en: 'Hunan', cities: ['长沙市', '株洲市', '湘潭市', '衡阳市'], postalPrefix: '41' },
+    { name: '河南省', en: 'Henan', cities: ['郑州市', '洛阳市', '开封市', '南阳市'], postalPrefix: '45' },
+    { name: '辽宁省', en: 'Liaoning', cities: ['沈阳市', '大连市', '鞍山市', '抚顺市'], postalPrefix: '11' }
+  ];
+  const CN_STREETS = ['人民路', '解放路', '建设路', '中山路', '和平路', '胜利路', '光明路', '新华路', '文化路', '幸福路', '长江路', '黄河路'];
+  const CN_FAMILY_NAMES = ['李', '王', '张', '刘', '陈', '杨', '赵', '黄', '周', '吴', '徐', '孙', '胡', '朱', '高', '林', '何', '郭', '马', '罗'];
+  const CN_GIVEN_NAMES = ['伟', '芳', '娜', '敏', '静', '丽', '强', '磊', '军', '洋', '勇', '艳', '杰', '娟', '涛', '明', '超', '秀英', '霞', '平', '刚', '桂英'];
 
-  // 随机生成邮编（用于没有配置邮编时的备选）
-  function randomPostalCode() {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+  function pickRandom(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+  function generateRandomInfo() {
+    const province = pickRandom(CN_PROVINCES);
+    const city = pickRandom(province.cities);
+    const street = pickRandom(CN_STREETS);
+    const streetNum = Math.floor(Math.random() * 999) + 1;
+    const building = Math.floor(Math.random() * 30) + 1;
+    const unit = Math.floor(Math.random() * 6) + 1;
+    const room = Math.floor(Math.random() * 20) + 1;
+    const postalCode = province.postalPrefix + String(Math.floor(1000 + Math.random() * 9000));
+    const name = pickRandom(CN_FAMILY_NAMES) + pickRandom(CN_GIVEN_NAMES);
+
+    return {
+      billingName: name,
+      billingCountry: 'CN',
+      // 省份：同时携带中英文，simulateSelect 会做模糊匹配
+      billingAdministrativeArea: province.en,
+      billingAdministrativeAreaCN: province.name,
+      billingLocality: city,
+      billingAddressLine1: `${street}${streetNum}号${building}栋${unit}单元${room}01室`,
+      billingPostalCode: postalCode
+    };
   }
 
   // 创建悬浮窗
@@ -90,12 +119,33 @@
     return true;
   }
 
-  // 模拟选择下拉框
-  function simulateSelect(element, value) {
+  // 模拟选择下拉框（支持模糊匹配 option 的 text/value）
+  function simulateSelect(element, value, altValue) {
     if (!element) return false;
 
     element.focus();
+
+    // 先尝试直接赋值
     element.value = value;
+
+    // 如果直接赋值不匹配任何 option，遍历做模糊匹配
+    if (element.value !== value || !element.value) {
+      const candidates = [value, altValue].filter(Boolean);
+      const options = element.querySelectorAll('option');
+      for (const opt of options) {
+        const optText = (opt.textContent || '').toLowerCase();
+        const optVal = (opt.value || '').toLowerCase();
+        for (const candidate of candidates) {
+          const lc = candidate.toLowerCase();
+          if (optVal === lc || optText.includes(lc) || optVal.includes(lc)) {
+            element.value = opt.value;
+            console.log(`[Windsurf] 省份模糊匹配: "${candidate}" → option value="${opt.value}" text="${opt.textContent}"`);
+            break;
+          }
+        }
+        if (element.value && element.selectedIndex > 0) break;
+      }
+    }
 
     const inputEvent = new Event('input', { bubbles: true, cancelable: true });
     const changeEvent = new Event('change', { bubbles: true, cancelable: true });
@@ -218,18 +268,22 @@
       // 步骤 1（新增）：展开"银行卡"支付方式
       await ensureCardMethodExpanded();
 
+      // 每次填卡都随机生成中国大陆地址
+      const addrInfo = generateRandomInfo();
+      console.log('[Windsurf] 本次随机地址:', JSON.stringify(addrInfo));
+
       // 表单字段配置：id, 填写值, 类型(input/select), 日志描述, 填写后延迟ms
       // required=false 的字段缺失时不告警（兼容不同国家的地址字段差异）
       const fields = [
         { id: 'cardNumber',                  value: formatCardNumber(card.number),           type: 'input',  label: '卡号',   delay: 50, required: true  },
         { id: 'cardExpiry',                  value: formatExpiry(card.month, card.year),     type: 'input',  label: '过期日期', delay: 50, required: true  },
         { id: 'cardCvc',                     value: card.cvc,                                type: 'input',  label: 'CVC',    delay: 50, required: true  },
-        { id: 'billingName',                 value: FIXED_INFO.billingName,                  type: 'input',  label: '姓名',   delay: 50, required: true  },
-        { id: 'billingCountry',              value: FIXED_INFO.billingCountry,               type: 'select', label: '国家',   delay: 80, required: true  },
-        { id: 'billingAdministrativeArea',   value: FIXED_INFO.billingAdministrativeArea,    type: 'select', label: '州/省',  delay: 50, required: false },
-        { id: 'billingLocality',             value: FIXED_INFO.billingLocality,              type: 'input',  label: '城市',   delay: 50, required: false },
-        { id: 'billingPostalCode',           value: FIXED_INFO.billingPostalCode || randomPostalCode(), type: 'input', label: '邮编', delay: 50, required: false },
-        { id: 'billingAddressLine1',         value: FIXED_INFO.billingAddressLine1,          type: 'input',  label: '地址',   delay: 50, required: false },
+        { id: 'billingName',                 value: addrInfo.billingName,                    type: 'input',  label: '姓名',   delay: 50, required: true  },
+        { id: 'billingCountry',              value: addrInfo.billingCountry,                 type: 'select', label: '国家',   delay: 300, required: true  },
+        { id: 'billingAdministrativeArea',   value: addrInfo.billingAdministrativeArea, altValue: addrInfo.billingAdministrativeAreaCN, type: 'select', label: '州/省', delay: 50, required: false },
+        { id: 'billingLocality',             value: addrInfo.billingLocality,                type: 'input',  label: '城市',   delay: 50, required: false },
+        { id: 'billingPostalCode',           value: addrInfo.billingPostalCode,              type: 'input',  label: '邮编',   delay: 50, required: false },
+        { id: 'billingAddressLine1',         value: addrInfo.billingAddressLine1,            type: 'input',  label: '地址',   delay: 50, required: false },
       ];
 
       // 等待页面元素加载
@@ -239,7 +293,7 @@
       for (const field of fields) {
         const el = document.getElementById(field.id);
         if (el) {
-          field.type === 'select' ? simulateSelect(el, field.value) : simulateInput(el, field.value);
+          field.type === 'select' ? simulateSelect(el, field.value, field.altValue) : simulateInput(el, field.value);
           console.log(`[Windsurf] ✅ 已填写${field.label}: 元素类型=${el.tagName}, 当前值="${el.value}"`);
         } else if (field.required) {
           console.warn(`[Windsurf] ⚠️ 未找到必填元素 #${field.id} (${field.label})`);
