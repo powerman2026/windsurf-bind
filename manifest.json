@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Windsurf 自动填卡",
-  "version": "1.1.0",
-  "description": "Stripe 支付页面自动填写信用卡信息",
+  "version": "1.2.0",
+  "description": "Stripe 支付页面自动填写信用卡信息（每次随机中国大陆地址）",
   "permissions": [
     "storage",
     "activeTab"
