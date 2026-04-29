@@ -279,7 +279,7 @@
         { id: 'cardExpiry',                  value: formatExpiry(card.month, card.year),     type: 'input',  label: '过期日期', delay: 50, required: true  },
         { id: 'cardCvc',                     value: card.cvc,                                type: 'input',  label: 'CVC',    delay: 50, required: true  },
         { id: 'billingName',                 value: addrInfo.billingName,                    type: 'input',  label: '姓名',   delay: 50, required: true  },
-        { id: 'billingCountry',              value: addrInfo.billingCountry,                 type: 'select', label: '国家',   delay: 300, required: true  },
+        { id: 'billingCountry',              value: addrInfo.billingCountry,                 type: 'select', label: '国家',   delay: 150, required: true  },
         { id: 'billingAdministrativeArea',   value: addrInfo.billingAdministrativeArea, altValue: addrInfo.billingAdministrativeAreaCN, type: 'select', label: '州/省', delay: 50, required: false },
         { id: 'billingLocality',             value: addrInfo.billingLocality,                type: 'input',  label: '城市',   delay: 50, required: false },
         { id: 'billingPostalCode',           value: addrInfo.billingPostalCode,              type: 'input',  label: '邮编',   delay: 50, required: false },
@@ -287,7 +287,7 @@
       ];
 
       // 等待页面元素加载
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, 50));
 
       // 逐个填写表单字段
       for (const field of fields) {
@@ -353,61 +353,35 @@
     return null;
   }
 
-  // 自动点击"开始试用"按钮
-  // 监测金额稳定后自动提交，并带重试机制
+  // 自动点击“开始试用/订阅”按钮
+  // 策略：快速轮询按钮是否可点击，不再监测金额变化
   async function autoClickSubmit() {
-    console.log('[Windsurf] 开始监测金额变化...');
+    console.log('[Windsurf] 等待提交按钮就绪...');
 
-    // 获取当前金额文本
-    const getAmountText = () => {
-      const amountElements = document.querySelectorAll('[class*="Amount"], [class*="amount"], [class*="total"], [class*="Total"]');
-      let text = '';
-      amountElements.forEach(el => {
-        text += el.textContent + '|';
-      });
-      return text;
-    };
+    const maxWaitMs = 15000; // 最多等待15秒
+    const pollInterval = 150; // 每150ms检查一次
+    const start = Date.now();
 
-    // 等待金额稳定（连续3次检测相同）
-    let lastAmount = '';
-    let stableCount = 0;
-    const maxWait = 30; // 最多等待30秒
-    let waitCount = 0;
-
-    while (stableCount < 3 && waitCount < maxWait) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      waitCount++;
-      
-      const currentAmount = getAmountText();
-      
-      if (currentAmount === lastAmount && currentAmount !== '') {
-        stableCount++;
-        console.log(`[Windsurf] 金额稳定检测 ${stableCount}/3`);
-      } else {
-        stableCount = 0;
-        lastAmount = currentAmount;
-        console.log('[Windsurf] 金额变化中，继续等待...');
+    while (Date.now() - start < maxWaitMs) {
+      const btn = findSubmitButton();
+      if (btn && !btn.disabled && !btn.classList.contains('SubmitButton--processing')) {
+        console.log('[Windsurf] 提交按钮已就绪，点击提交');
+        showStatus('自动提交中...', 'info');
+        btn.click();
+        console.log('[Windsurf] 已点击提交按钮');
+        showStatus('✓ 已自动提交！', 'success');
+        // 提交后重试检测
+        await verifyAndRetrySubmit();
+        return;
       }
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
     }
 
-    if (waitCount >= maxWait) {
-      console.log('[Windsurf] 等待超时，尝试点击提交按钮');
-    }
-
-    // 查找并点击提交按钮
-    const submitBtn = findSubmitButton();
-    if (submitBtn) {
-      console.log('[Windsurf] 找到提交按钮，准备点击');
-      showStatus('金额已稳定，自动提交中...', 'info');
-      
-      // 等待一下再点击
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      submitBtn.click();
-      console.log('[Windsurf] 已点击"开始试用"按钮');
-      showStatus('✓ 已自动提交！', 'success');
-
-      // 提交后重试检测：如果按钮仍可点击，说明提交未生效，自动重试
+    // 超时处理
+    const btn = findSubmitButton();
+    if (btn) {
+      console.log('[Windsurf] 等待超时，强制点击');
+      btn.click();
       await verifyAndRetrySubmit();
     } else {
       console.log('[Windsurf] 未找到提交按钮');
@@ -420,8 +394,8 @@
     const maxRetries = 5;
     
     for (let retry = 1; retry <= maxRetries; retry++) {
-      // 每次等待3秒后检查
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // 等待后检查
+      await new Promise(resolve => setTimeout(resolve, 2000));
       
       const btn = findSubmitButton();
       
@@ -434,10 +408,10 @@
       // 按钮处于 loading/processing 状态，说明正在提交
       if (btn.disabled || 
           btn.classList.contains('SubmitButton--processing') ||
+          btn.classList.contains('SubmitButton--success') ||
           btn.getAttribute('aria-busy') === 'true') {
         console.log('[Windsurf] 提交正在处理中，继续等待...');
-        // 处理中则额外等5秒再检查
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        await new Promise(resolve => setTimeout(resolve, 3000));
         continue;
       }
       
