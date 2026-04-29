@@ -43,13 +43,33 @@ function saveCards() {
   });
 }
 
+// 随机生成到期时间（未来1~5年内的随机月份）
+function randomExpiry() {
+  const now = new Date();
+  const futureMonths = Math.floor(Math.random() * 60) + 1; // 1~60个月后
+  const future = new Date(now.getFullYear(), now.getMonth() + futureMonths, 1);
+  const month = String(future.getMonth() + 1).padStart(2, '0');
+  const year = String(future.getFullYear());
+  return { month, year };
+}
+
+// 随机生成3位CVC
+function randomCVC() {
+  return String(Math.floor(100 + Math.random() * 900));
+}
+
 // 解析信用卡字符串
 // 支持多种格式：
+// 格式0: 纯卡号（自动去空格/横杠，随机生成到期时间和CVC）
 // 格式1: 卡号|月份|年份|CVC (原格式)
 // 格式2: 卡号|月份/年份|CVC (斜杠分隔)
 // 格式3: 卡号|月份/年份(2位或4位)|CVC
 function parseCardString(str) {
-  const parts = str.trim().split('|');
+  // 先去除首尾空格
+  const trimmed = str.trim();
+  if (!trimmed) return null;
+
+  const parts = trimmed.split('|');
   
   let number, month, year, cvc;
   
@@ -78,12 +98,19 @@ function parseCardString(str) {
         return null;
       }
     }
+  } else if (parts.length === 1) {
+    // 格式0: 纯卡号，随机生成到期时间和CVC
+    number = parts[0];
+    const expiry = randomExpiry();
+    month = expiry.month;
+    year = expiry.year;
+    cvc = randomCVC();
   } else {
     return null;
   }
 
-  // 清理卡号
-  const cleanNumber = number.replace(/\s/g, '');
+  // 清理卡号（去空格、横杠、点号等非数字字符）
+  const cleanNumber = number.replace(/[\s\-\.]/g, '');
   
   // 验证卡号（至少13位数字）
   if (!/^\d{13,19}$/.test(cleanNumber)) {
