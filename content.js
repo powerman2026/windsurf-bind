@@ -93,27 +93,30 @@
     }, 3000);
   }
 
-  // 模拟用户输入
+  // 瞬间填充 input（用原生 setter 绕过 React 受控组件，不逐字符）
   function simulateInput(element, value) {
     if (!element) return false;
 
-    // 聚焦元素
     element.focus();
 
-    // 清空现有值
-    element.value = '';
-
-    // 触发输入事件
-    const inputEvent = new Event('input', { bubbles: true, cancelable: true });
-    const changeEvent = new Event('change', { bubbles: true, cancelable: true });
-
-    // 逐字符输入以触发所有事件监听器
-    for (let i = 0; i < value.length; i++) {
-      element.value += value[i];
-      element.dispatchEvent(inputEvent);
+    // 使用原生 setter 设置值（绕过 React 的控制）
+    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    if (nativeSetter) {
+      nativeSetter.call(element, value);
+    } else {
+      element.value = value;
     }
 
-    element.dispatchEvent(changeEvent);
+    // 清除 React 的 valueTracker，否则 onChange 不会触发
+    if (element._valueTracker) {
+      element._valueTracker.setValue('');
+    }
+
+    // 触发完整事件序列
+    element.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+    element.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+    element.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'a' }));
+    element.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'a' }));
     element.blur();
 
     return true;
@@ -147,11 +150,8 @@
       }
     }
 
-    const inputEvent = new Event('input', { bubbles: true, cancelable: true });
-    const changeEvent = new Event('change', { bubbles: true, cancelable: true });
-
-    element.dispatchEvent(inputEvent);
-    element.dispatchEvent(changeEvent);
+    element.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+    element.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
     element.blur();
 
     return true;
@@ -272,35 +272,43 @@
       const addrInfo = generateRandomInfo();
       console.log('[Windsurf] 本次随机地址:', JSON.stringify(addrInfo));
 
-      // 表单字段配置：id, 填写值, 类型(input/select), 日志描述, 填写后延迟ms
+      // 表单字段配置：id, 填写值, 类型(input/select), 日志描述
       // required=false 的字段缺失时不告警（兼容不同国家的地址字段差异）
       const fields = [
-        { id: 'cardNumber',                  value: formatCardNumber(card.number),           type: 'input',  label: '卡号',   delay: 50, required: true  },
-        { id: 'cardExpiry',                  value: formatExpiry(card.month, card.year),     type: 'input',  label: '过期日期', delay: 50, required: true  },
-        { id: 'cardCvc',                     value: card.cvc,                                type: 'input',  label: 'CVC',    delay: 50, required: true  },
-        { id: 'billingName',                 value: addrInfo.billingName,                    type: 'input',  label: '姓名',   delay: 50, required: true  },
-        { id: 'billingCountry',              value: addrInfo.billingCountry,                 type: 'select', label: '国家',   delay: 150, required: true  },
-        { id: 'billingAdministrativeArea',   value: addrInfo.billingAdministrativeArea, altValue: addrInfo.billingAdministrativeAreaCN, type: 'select', label: '州/省', delay: 50, required: false },
-        { id: 'billingLocality',             value: addrInfo.billingLocality,                type: 'input',  label: '城市',   delay: 50, required: false },
-        { id: 'billingPostalCode',           value: addrInfo.billingPostalCode,              type: 'input',  label: '邮编',   delay: 50, required: false },
-        { id: 'billingAddressLine1',         value: addrInfo.billingAddressLine1,            type: 'input',  label: '地址',   delay: 50, required: false },
+        { id: 'cardNumber',                  value: formatCardNumber(card.number),           type: 'input',  label: '卡号',   required: true  },
+        { id: 'cardExpiry',                  value: formatExpiry(card.month, card.year),     type: 'input',  label: '过期日期', required: true  },
+        { id: 'cardCvc',                     value: card.cvc,                                type: 'input',  label: 'CVC',    required: true  },
+        { id: 'billingName',                 value: addrInfo.billingName,                    type: 'input',  label: '姓名',   required: true  },
+        { id: 'billingCountry',              value: addrInfo.billingCountry,                 type: 'select', label: '国家',   required: true  },
+        { id: 'billingAdministrativeArea',   value: addrInfo.billingAdministrativeArea, altValue: addrInfo.billingAdministrativeAreaCN, type: 'select', label: '州/省', required: false },
+        { id: 'billingLocality',             value: addrInfo.billingLocality,                type: 'input',  label: '城市',   required: false },
+        { id: 'billingPostalCode',           value: addrInfo.billingPostalCode,              type: 'input',  label: '邮编',   required: false },
+        { id: 'billingAddressLine1',         value: addrInfo.billingAddressLine1,            type: 'input',  label: '地址',   required: false },
       ];
 
-      // 等待页面元素加载
-      await new Promise(resolve => setTimeout(resolve, 50));
-
-      // 逐个填写表单字段
+      // 瞬间同步填充所有字段（不再等待）
+      const fillStart = performance.now();
+      let filledCount = 0;
       for (const field of fields) {
         const el = document.getElementById(field.id);
         if (el) {
           field.type === 'select' ? simulateSelect(el, field.value, field.altValue) : simulateInput(el, field.value);
-          console.log(`[Windsurf] ✅ 已填写${field.label}: 元素类型=${el.tagName}, 当前值="${el.value}"`);
+          filledCount++;
         } else if (field.required) {
           console.warn(`[Windsurf] ⚠️ 未找到必填元素 #${field.id} (${field.label})`);
-        } else {
-          console.log(`[Windsurf] ℹ️ 跳过可选字段 #${field.id} (${field.label})`);
         }
-        await new Promise(resolve => setTimeout(resolve, field.delay));
+      }
+      console.log(`[Windsurf] ⚡ 瞬间填入 ${filledCount} 个字段，耗时 ${(performance.now() - fillStart).toFixed(1)}ms`);
+
+      // 省份下拉可能依赖于国家选择后的异步加载，等一个动画帧后重新填一次省份（兼容首次差一点的场景）
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const provinceField = fields.find(f => f.id === 'billingAdministrativeArea');
+      if (provinceField) {
+        const provinceEl = document.getElementById(provinceField.id);
+        if (provinceEl && (!provinceEl.value || provinceEl.selectedIndex <= 0)) {
+          simulateSelect(provinceEl, provinceField.value, provinceField.altValue);
+          console.log('[Windsurf] 🔄 省份补填:', provinceEl.value);
+        }
       }
 
       // 步骤 2（新增）：勾选同意条款
